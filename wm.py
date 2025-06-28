@@ -17,7 +17,7 @@ file_path = os.path.join(base_path, 'data.json')
 # Проверка и создание JSON-файла
 if not os.path.exists(file_path):
     with open(file_path, 'w', encoding='utf-8') as file:
-        json.dump({}, file, ensure_ascii=False, indent=4)
+        json.dump({"high_score": 0}, file, ensure_ascii=False, indent=4)
 
 # Функция для чтения JSON
 def load_data():
@@ -31,7 +31,7 @@ def save_data(data):
 
 # Создаем главное окно
 main_window = tk.Tk()
-main_window.title("Word memory 1.0")
+main_window.title("Word memory 1.3")
 main_window.geometry("600x400")
 
 # Функция для окна добавления слова
@@ -61,7 +61,7 @@ def open_add_word_window():
         messagebox.showinfo("Success", f"The Word '{rus}' added!")
         rus_entry.delete(0, tk.END)
         eng_entry.delete(0, tk.END)
-        update_word_count()  # Обновляем количество слов после добавления
+        update_word_count()
 
     tk.Button(add_window, text="Save", command=save_word, font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").pack(pady=15)
     tk.Button(add_window, text="Back", command=lambda: back_to_main(add_window), font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").pack(pady=15)
@@ -69,7 +69,7 @@ def open_add_word_window():
 # Функция для окна теста
 def open_test_window():
     data = load_data()
-    if not data:
+    if not data or len([k for k in data.keys() if k != "high_score"]) == 0:
         messagebox.showerror("Error", "The dictionary is empty! Add words.")
         return
 
@@ -78,13 +78,15 @@ def open_test_window():
     test_window.title("Test")
     test_window.geometry("600x400")
 
-    # Настраиваем сетку
     test_window.grid_columnconfigure(0, weight=1)
     test_window.grid_columnconfigure(1, weight=1)
 
-    # Выбираем случайное слово
+    current_score = 0
+    score_label = tk.Label(test_window, text=f"Score: {current_score}", font=("Arial", 12))
+    score_label.grid(row=6, column=0, columnspan=2, pady=10)
+
     def get_random_word():
-        return random.choice(list(data.keys()))
+        return random.choice([k for k in data.keys() if k != "high_score"])
 
     current_word = get_random_word()
     word_label = tk.Label(test_window, text=f"Word: {current_word}", font=("Arial", 14))
@@ -98,37 +100,56 @@ def open_test_window():
     result_label.grid(row=3, column=0, columnspan=2, pady=15)
 
     def check_answer():
+        nonlocal current_score
         user_answer = answer_entry.get().strip()
         correct_answer = data[current_word]
         result_label.config(text=f"Correct translation: {correct_answer}")
+        current_score = 0
+        score_label.config(text=f"Score: {current_score}")
 
     def check_answer_with_color():
-        nonlocal current_word
+        nonlocal current_word, current_score
         user_answer = answer_entry.get().strip()
         correct_answer = data[current_word]
         if user_answer.lower() == correct_answer.lower():
             answer_entry.config(fg="green")
-            test_window.after(1000, next_word)  # Переход к следующему слову через 1 секунду
+            current_score += 1
+            score_label.config(text=f"Score: {current_score}")
+            current_data = load_data()
+            if current_score > current_data.get("high_score", 0):
+                current_data["high_score"] = current_score
+                save_data(current_data)
+                update_high_score()
+            test_window.after(1000, next_word)
         else:
             answer_entry.config(fg="red")
+            current_score = 0
+            score_label.config(text=f"Score: {current_score}")
 
     def next_word():
         nonlocal current_word
         current_word = get_random_word()
         word_label.config(text=f"Word: {current_word}")
         answer_entry.delete(0, tk.END)
-        answer_entry.config(fg="black")  # Сбрасываем цвет на чёрный
+        answer_entry.config(fg="black")
         result_label.config(text="")
 
+    def back_to_main_with_reset(window):
+        nonlocal current_score
+        current_score = 0
+        score_label.config(text=f"Score: {current_score}")
+        back_to_main(window)
+
     tk.Button(test_window, text="Check", command=check_answer_with_color, font=("Arial", 12), padx=15, pady=8, borderwidth=2, relief="groove").grid(row=4, column=0, columnspan=2, pady=10)
-    tk.Button(test_window, text="Back", command=lambda: back_to_main(test_window), font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").grid(row=5, column=0, padx=5, pady=5, sticky="e")
+    tk.Button(test_window, text="Back", command=lambda: back_to_main_with_reset(test_window), font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").grid(row=5, column=0, padx=5, pady=5, sticky="e")
     tk.Button(test_window, text="Correct translation", command=check_answer, font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
 # Функция возврата к главному окну
 def back_to_main(window):
     window.destroy()
     main_window.deiconify()
-    update_word_count()  # Обновляем количество слов при возврате
+    update_word_count()
+    update_high_score()
 
 # Функция закрытия программы
 def close_program():
@@ -137,19 +158,28 @@ def close_program():
 # Функция для обновления количества слов
 def update_word_count():
     data = load_data()
-    word_count = len(data)
+    word_count = len([k for k in data.keys() if k != "high_score"])
     word_count_label.config(text=f"Words in dictionary: {word_count}")
+
+# Функция для обновления рекорда
+def update_high_score():
+    data = load_data()
+    high_score = data.get("high_score", 0)
+    high_score_label.config(text=f"High Score: {high_score}")
 
 # Элементы главного окна
 tk.Label(main_window, text="Learn words, friend.", font=("Arial", 16)).pack(pady=20)
 word_count_label = tk.Label(main_window, text="Words in dictionary: 0", font=("Arial", 12))
 word_count_label.pack(pady=10)
+high_score_label = tk.Label(main_window, text="High Score: 0", font=("Arial", 12))
+high_score_label.pack(pady=10)
 tk.Button(main_window, text="Add a word", command=open_add_word_window, font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").pack(pady=15)
 tk.Button(main_window, text="Take the test", command=open_test_window, font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").pack(pady=15)
 tk.Button(main_window, text="Close", command=close_program, font=("Arial", 12), padx=10, pady=5, borderwidth=2, relief="groove").pack(pady=15)
 
-# Инициализация количества слов при запуске
+# Инициализация количества слов и рекорда при запуске
 update_word_count()
+update_high_score()
 
 # Запускаем главный цикл
 main_window.mainloop()
